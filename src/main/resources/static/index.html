@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ta">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MGNREGA Performance Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+          font-family: "Segoe UI", sans-serif;
+          background: #f3f6f9;
+          color: #222;
+          margin: 0;
+          padding: 20px;
+        }
+
+        h1 {
+          text-align: center;
+          color: #1b5e20;
+        }
+
+        .container {
+          max-width: 950px;
+          margin: 20px auto;
+          background: white;
+          border-radius: 10px;
+          box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+          padding: 20px;
+        }
+
+        .controls {
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: center;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 15px;
+        }
+
+        label {
+          font-weight: bold;
+          margin-right: 5px;
+        }
+
+        select {
+          padding: 8px;
+          font-size: 14px;
+          border-radius: 5px;
+          border: 1px solid #ccc;
+          width: 180px;
+        }
+
+        button {
+          padding: 8px 16px;
+          font-size: 14px;
+          border-radius: 5px;
+          border: none;
+          background: #1b5e20;
+          color: white;
+          cursor: pointer;
+          transition: 0.2s;
+        }
+
+        button:hover {
+          background: #2e7d32;
+        }
+
+        .metrics-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+          gap: 10px;
+          margin-top: 20px;
+        }
+
+        .metric {
+          background: #f1f8e9;
+          padding: 10px;
+          border-radius: 8px;
+        }
+
+        .metric span {
+          font-weight: bold;
+        }
+
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 20px;
+        }
+
+        th, td {
+          border: 1px solid #ddd;
+          padding: 8px;
+          text-align: center;
+        }
+
+        th {
+          background: #a5d6a7;
+        }
+
+        canvas {
+          margin-top: 30px;
+          background: #fff;
+          border-radius: 10px;
+          box-shadow: 0 3px 8px rgba(0, 0, 0, 0.05);
+          padding: 10px;
+        }
+
+        .footer {
+          text-align: center;
+          margin-top: 20px;
+          font-size: 13px;
+          color: gray;
+        }
+    </style>
+</head>
+
+<body>
+<h1>MGNREGA Performance Dashboard</h1>
+<p style="text-align:center;">
+    Choose your district and year to view MGNREGA statistics.<br>
+    (உங்கள் மாவட்டம் மற்றும் ஆண்டைத் தேர்ந்தெடுக்கவும்)
+</p>
+
+<div class="container">
+    <div class="controls">
+        <label for="district">District (மாவட்டம்)</label>
+        <select id="district"><option>Loading...</option></select>
+
+        <label for="year">Financial Year (நிதியாண்டு)</label>
+        <select id="year"><option>Loading...</option></select>
+
+        <button id="loadBtn">Show Data (தரவு காட்டு)</button>
+    </div>
+
+    <div id="output"></div>
+</div>
+
+<div class="footer">
+    <p>Powered by MGNREGA Open Data | © 2025</p>
+</div>
+
+<script>
+    const baseUrl = "http://localhost:8080/metrics";
+    let chartInstance = null;
+
+    async function loadDropdowns() {
+      try {
+        const [districtRes, yearRes] = await Promise.all([
+          fetch(baseUrl + "/districts"),
+          fetch(baseUrl + "/years")
+        ]);
+        const districts = await districtRes.json();
+        const years = await yearRes.json();
+
+        const districtSel = document.getElementById("district");
+        districtSel.innerHTML = "";
+        districts.forEach(d => {
+          const opt = document.createElement("option");
+          opt.value = d;
+          opt.textContent = d;
+          districtSel.appendChild(opt);
+        });
+
+        const yearSel = document.getElementById("year");
+        yearSel.innerHTML = "";
+        years.forEach(y => {
+          const opt = document.createElement("option");
+          opt.value = y;
+          opt.textContent = y;
+          yearSel.appendChild(opt);
+        });
+      } catch (err) {
+        console.error("Error loading dropdowns:", err);
+      }
+    }
+
+    async function loadMetrics() {
+      const district = document.getElementById("district").value;
+      const year = document.getElementById("year").value;
+      const output = document.getElementById("output");
+      output.innerHTML = "<p>Loading...</p>";
+
+      try {
+        const res = await fetch(`${baseUrl}/data?district=${district}&year=${year}`);
+        if (!res.ok) {
+          output.innerHTML = "<p style='color:red;'>No data available.</p>";
+          return;
+        }
+
+        const data = await res.json();
+        if (!data.length) {
+          output.innerHTML = "<p style='color:red;'>No data found for selected district/year.</p>";
+          return;
+        }
+
+        const d = data[0];
+        let html = `
+          <h2 style="text-align:center;">${district} — ${year}</h2>
+          <div class='metrics-grid'>
+            <div class='metric'><span>Avg Wage Rate per Day (₹):</span> ${d.averageWageRate ?? 'N/A'}</div>
+            <div class='metric'><span>Avg Days Employment:</span> ${d.avgDaysEmployment ?? 'N/A'}</div>
+            <div class='metric'><span>Total Expenditure (₹):</span> ₹${Number(d.totalExp || 0).toLocaleString()}</div>
+            <div class='metric'><span>Households Worked:</span> ${d.totalHouseholdsWorked ?? 'N/A'}</div>
+            <div class='metric'><span>Individuals Worked:</span> ${d.totalIndividualsWorked ?? 'N/A'}</div>
+            <div class='metric'><span>% on NRM Works:</span> ${d.percentNRM ?? 'N/A'}</div>
+            <div class='metric'><span>% on Agriculture Works:</span> ${d.percentAgriWorks ?? 'N/A'}</div>
+            <div class='metric'><span>% Payments within 15 days:</span> ${d.percentPayment15Days ?? 'N/A'}</div>
+          </div>
+        `;
+
+        html += `
+          <h3>Monthly Data (மாதந்தோறும்)</h3>
+          <table>
+            <tr>
+              <th>Month</th>
+              <th>Avg Days</th>
+              <th>Households</th>
+              <th>Individuals</th>
+              <th>Expenditure (₹)</th>
+            </tr>
+        `;
+        data.forEach(row => {
+          html += `
+            <tr>
+              <td>${row.month}</td>
+              <td>${row.avgDaysEmployment ?? 'N/A'}</td>
+              <td>${row.totalHouseholdsWorked ?? 'N/A'}</td>
+              <td>${row.totalIndividualsWorked ?? 'N/A'}</td>
+              <td>₹${Number(row.totalExp || 0).toLocaleString()}</td>
+            </tr>
+          `;
+        });
+        html += `</table><canvas id="chart" height="100"></canvas>`;
+        output.innerHTML = html;
+
+        drawChart(data);
+      } catch (err) {
+        console.error(err);
+        output.innerHTML = "<p style='color:red;'>Error loading data.</p>";
+      }
+    }
+
+    function drawChart(data) {
+      const ctx = document.getElementById("chart").getContext("2d");
+      const labels = data.map(d => d.month);
+      const expenditure = data.map(d => d.totalExp);
+      const avgDays = data.map(d => d.avgDaysEmployment);
+
+      if (chartInstance) chartInstance.destroy();
+
+      chartInstance = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: "Total Expenditure (₹)",
+              data: expenditure,
+              backgroundColor: "rgba(56,142,60,0.7)",
+              borderColor: "#2e7d32",
+              borderWidth: 1,
+              yAxisID: 'y1'
+            },
+            {
+              label: "Avg Days Employment",
+              data: avgDays,
+              type: "line",
+              borderColor: "#ff9800",
+              backgroundColor: "#ff9800",
+              yAxisID: 'y2',
+              tension: 0.3,
+              fill: false,
+              pointRadius: 4
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: 'top' },
+            title: { display: true, text: "District Monthly Performance" }
+          },
+          scales: {
+            y1: {
+              type: "linear",
+              position: "left",
+              title: { display: true, text: "Expenditure (₹)" }
+            },
+            y2: {
+              type: "linear",
+              position: "right",
+              title: { display: true, text: "Avg Days Employment" },
+              grid: { drawOnChartArea: false }
+            }
+          }
+        }
+      });
+    }
+
+    document.getElementById("loadBtn").addEventListener("click", loadMetrics);
+    loadDropdowns();
+</script>
+</body>
+</html>
+
